@@ -1,76 +1,138 @@
 import matplotlib.pyplot as plt
 import numpy as np
 import math
+from multiprocessing import Process, Manager, Pool
+import os
+
+from giftools import render
 
 
-def animate_static(width, height, R_interval, I_interval):  # template function for animating a transition with an unmoving frame
-    frame_count = 1
+class FracMap(object):
+    def __init__(self):
+        pass
+    def __call__(self, x, c):
+        f = lambda x, c: x**2 + c
+        return f(x, c)
 
-    for frame_current in range(frame_count):
+my_frac = FracMap()
 
+
+class Camera:
+    def __init__(self, resolution=(250,250), frame=([-2,2],[-2,2]), center=(0,0)):
+        self.resolution = resolution  # dimensions in pixels
+        self.frame = frame  # tuple storing complex domain
+        self.center = ((self.frame[0][0]+self.frame[0][1])/2,(self.frame[1][0]+self.frame[1][1])/2)  # tuple storing center of the frame
+        self.xlen = self.frame[0][1] - self.frame[0][0]
+        self.ylen = self.frame[1][1] - self.frame[1][0]
+
+        self.frame_init = frame  # stores original complex domain before any transformations
+        self.xlen_init = self.xlen
+        self.ylen_init = self.ylen
+
+    def update_position(self, new_frame):  # changes camera frame directly, doesn't yet support change in resolution
+        self.frame = new_frame
+        self.xlen = self.frame[0][1] - self.frame[0][0]
+        self.ylen = self.frame[1][1] - self.frame[1][0]
+        self.center = ((self.frame[0][0]+self.frame[0][1])/2,(self.frame[1][0]+self.frame[1][1])/2)
+
+    def recenter(self, new_center, reinit=False):  # shifts same camera frame to be centered around a new point
+        self.center = new_center
+        frame = ([self.center[0]-self.xlen/2,self.center[0]+self.xlen/2],[self.center[1]-self.ylen/2,self.center[1]+self.ylen/2])
+        self.frame = frame
+        if reinit:
+            self.frame_init = frame  # stores original complex domain before any transformations
+            self.xlen_init = self.xlen
+            self.ylen_init = self.ylen
+
+    def zoom(self, frame_count, frame_current, zoom_factor, depth, depth_scale=1):
+        depth = math.ceil(depth * depth_scale)
+
+        R_val = (self.xlen_init - math.exp(math.log(self.xlen_init)*(frame_count-frame_current)/frame_count+math.log(self.xlen_init*zoom_factor)*frame_current/frame_count))/2
+        I_val = (self.ylen_init - math.exp(math.log(self.ylen_init)*(frame_count-frame_current)/frame_count+math.log(self.ylen_init*zoom_factor)*frame_current/frame_count))/2
+
+        R_adjusted = [self.frame_init[0][0] + R_val, self.frame_init[0][1] - R_val]
+        I_adjusted = [self.frame_init[1][0] + I_val, self.frame_init[1][1] - I_val]
+
+        self.update_position((R_adjusted,I_adjusted))
+
+    def capture_frame(self, approach="process", show_trace=True, iterations=25, frame_current=0):
         param = 0
+        if approach == "process":
+            with Manager() as manager:
 
-        image = mandelbrot_set(width, height, DEPTH, param, R_interval, I_interval)
-        export_figure_matplotlib(image, label + str(frame_current), 120, 1, False)
+                data = manager.list(range(self.resolution[1]))
 
-    print("Finished.. Yay :)")
-    return
+                cores = 8
+                p = [
+                    Process(target=renderStrips, args=(i, self, my_frac, iterations, param, data, cores))
+                    for i in range(cores)
+                ]
+                for p_i in p:
+                    p_i.start()
+                for p_i in p:
+                    p_i.join()
 
+                X = np.array(data)
 
-def animate_zoom():
-    # template for animating a zoom into center of frame
-    # Subsequent frames are in the same aspect ratio
+        if approach == 'baby':
+            X = np.array(fractal(cam, my_frac, iterations, param))
 
-    frame_count = 10
-    zoom_factor = 1/2**5
+        export_figure_matplotlib(X, str(frame_current), 120, 1, False)
 
-    DEPTH = 256
-    DEPTH_SCALE = zoom_factor**(-1/(frame_count))
-
-    R_init = R_range[1]-R_range[0]
-    I_init = I_range[1]-I_range[0]
-
-    for frame_current in range(frame_count):
-        # Shifts the window, accomplishing #zoom_factor over #frame_count frames
-
-        DEPTH = math.ceil(DEPTH * DEPTH_SCALE)
-
-        R_range[0] = R_range[0] + (R_init/2)*(1/frame_count)*(1-zoom_factor)
-        I_range[0] = I_range[0] + (I_init/2)*(1/frame_count)*(1-zoom_factor)
-
-        R_range[1] = R_range[1] - (R_init/2)*(1/frame_count)*(1-zoom_factor)
-        I_range[1] = I_range[1] - (I_init/2)*(1/frame_count)*(1-zoom_factor)
-
-        print(str(R_range[0])+','+str(R_range[1]))
-        print(str(I_range[0])+','+str(I_range[1]))
-        print(DEPTH)
-        print()
-
-        param = 0  # potential frame dependent parameter
-
-        image = mandelbrot_set(R_scale, I_scale, DEPTH, param)
-        export_figure_matplotlib(image, label + str(frame_current), 120, 1, False)
-
-    print("Finished.. Yay :)")
-    return
+        if show_trace:
+            print('frame: ' + str(frame_current + 1))
+            print(str(self.frame[0][0])+','+str(self.frame[0][1]))
+            print(str(self.frame[1][0])+','+str(self.frame[1][1]))
+            print("depth: " + str(iterations))
+            print()
 
 
-def mandelbrot_set(width, height, iterations, time, R_interval, I_interval):
+class Animation:  # camera path should be a path parameterized from 0 to 1 guiding the frame center
+    def __init__(self, camera=Camera(), depth=25, depth_scale=1, camera_path=lambda t: (0,0), frame_count=1, frame_duration=1/24, zoom_factor=1):
+        self.cam = camera
+        self.path = camera_path
+        self.fcount = frame_count
+        self.duration = frame_duration
+        self.zoomf = zoom_factor
+        self.depth = depth
+        self.depth_scale = depth_scale
+
+    def animate(self, make_gif=True, display_trace=True):  # frame by frame moves center along the parameterized path and then applies zoom
+        for frame in range(self.fcount):
+            center = self.path(frame/(self.fcount-1))
+            self.cam.recenter(center)
+            self.cam.zoom(frame_count=self.fcount, frame_current=frame, zoom_factor=self.zoomf, depth=self.depth, depth_scale=self.depth_scale)
+            self.cam.capture_frame(frame_current=frame, show_trace=display_trace)
+
+        if make_gif:
+            directory = 'frames/'
+            frames = []
+
+            for filename in os.listdir(directory):
+                frames.append((int(filename[:-4]), 'frames/' + filename))
+
+            frames = sorted(frames)
+            print(frames)
+
+            render([y for (x, y) in frames], "test", frame_duration=self.duration)
+
+
+def fractal(cam, iterable, iterations, time):
 
     row, col, i = 0, 0, 0
 
-    pixels = [''] * height
-    for k in range(height):
-        pixels[k] = [''] * width
+    pixels = [''] * cam.resolution[1]
+    for k in range(cam.resolution[1]):
+        pixels[k] = [''] * cam.resolution[0]
 
-    for row in range(width):
-        for col in range(height):
+    for row in range(cam.resolution[0]):
+        for col in range(cam.resolution[1]):
 
             # if row == math.floor(w/2) and col == math.floor(h/2):
             #    print("Halfway There ;)")
 
-            cx = ((R_interval[1]-R_interval[0])/width)*row+R_interval[0]
-            cy = ((I_interval[0]-I_interval[1])/height)*col+I_interval[1]
+            cx = ((cam.xlen)/cam.resolution[0])*row+cam.frame[0][0]
+            cy = ((-cam.ylen)/cam.resolution[1])*col+cam.frame[1][1]
 
             # old scaling function in case something breaks
             # cx = (row - 3*w/4)/(0.25*w)
@@ -82,10 +144,8 @@ def mandelbrot_set(width, height, iterations, time, R_interval, I_interval):
             for i in range(iterations):
                 if abs(x) > 4:
                     break
-                # x = (complex(abs(x.real),abs(x.imag)))**4 + c #Burning Ship
-                # x = (x.conjugate())**2+c #Tricorn / Mandelbar
 
-                x = x**2 + c
+                x = iterable(x, c)
 
             color = i
             pixels[col][row] = color
@@ -93,7 +153,7 @@ def mandelbrot_set(width, height, iterations, time, R_interval, I_interval):
     return pixels
 
 
-def rational_julia_set(width, height, iterations, time):
+def rational_julia_set(width, height, iterations, time):  # deprecated
 
     w, h = width, height
     row, col, i = 0, 0, 0
@@ -136,32 +196,11 @@ def export_figure_matplotlib(arr, f_name, dpi=120, resize_fact=1, plt_show=False
         plt.close()
 
 
-def renderStrips(process, width, height, iterations, time, R_interval, I_interval, final_render, core_count):
-    for row in range(height):
+def renderStrips(process, cam, iterable, iterations, time, final_render, core_count):
+    for row in range(cam.resolution[1]):
         if row % core_count == process:
-            I_new = (I_interval[1] - (row+1)*(I_interval[1]-I_interval[0])/height, I_interval[1] - row*(I_interval[1]-I_interval[0])/height)
+            I_new = (cam.frame[1][1] - (row+1)*(cam.frame[1][1]-cam.frame[1][0])/cam.resolution[1], cam.frame[1][1] - row*(cam.frame[1][1]-cam.frame[1][0])/cam.resolution[1])
 
-            final_render[row] = mandelbrot_set(width, 1, iterations, time, R_interval, I_new)[0]
+            cam_new = Camera(resolution=(cam.resolution[0],1), frame=(cam.frame[0], I_new))
 
-
-def renderStrip(row):  # broken
-    width = R_scale
-    height = I_scale
-    iterations = DEPTH
-    time = 0
-    R_interval = R_range
-    I_interval = I_range
-    final_render = data
-
-    I_new = (I_interval[1] - (row+1)*(I_interval[1]-I_interval[0])/height, I_interval[1] - row*(I_interval[1]-I_interval[0])/height)
-
-    final_render[row] = mandelbrot_set(width, 1, iterations, time, R_interval, I_new)[0]
-
-
-# pixels = mandelbrot_set(R_scale, I_scale, iterations=DEPTH, time=1)
-
-# export_figure_matplotlib(pixels, "fractal", 120, 1, False)
-
-# animate_static(R_scale, I_scale, R_range, I_range)
-
-# animate_zoom()
+            final_render[row] = fractal(cam_new, iterable, iterations, time)[0]
