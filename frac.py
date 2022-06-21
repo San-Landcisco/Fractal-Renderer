@@ -1,8 +1,8 @@
 import matplotlib.pyplot as plt
 import numpy as np
 import math
-import cmath
 from multiprocessing import Process, Manager, Pool
+import os
 
 from giftools import render
 
@@ -88,7 +88,7 @@ def mandelbrot_set(width, height, iterations, time, R_interval, I_interval):
                 #x = (complex(abs(x.real),abs(x.imag)))**4 + c #Burning Ship
                 #x = (x.conjugate())**2+c #Tricorn / Mandelbar
 
-                x = x**2 + x + c
+                x = np.sin(x) + c
 
             color = i
             pixels[col][row] = color
@@ -132,7 +132,7 @@ def export_figure_matplotlib(arr, f_name, dpi=120, resize_fact=1, plt_show=False
     ax.set_axis_off()
     fig.add_axes(ax)
     ax.imshow(arr, cmap='twilight_shifted')
-    plt.savefig(f_name, dpi=(dpi * resize_fact))
+    plt.savefig("frames/" + f_name, dpi=(dpi * resize_fact))
     if plt_show:
         plt.show()
     else:
@@ -172,22 +172,22 @@ def renderStrip(row): #broken
 
 if __name__ == '__main__':
     #Domain controls for the plot
-    R_range = [-2.5,1.5] #Real interval
+    R_range = [-2,2] #Real interval
     I_range = [-2,2] #Complex interval
 
     R_scale = 1000   #Width number of pixels
     I_scale = abs(math.ceil(R_scale * (I_range[0]-I_range[1])/(R_range[1]-R_range[0])))
 
-    label = "test"
-
+    display_trace = True
+    make_gif = True
     approach = "process"
 
-    frame_count = 1
-    zoom_factor = 1
+    frame_count = 50
+    zoom_factor = 0.1
 
     param = 0
 
-    DEPTH = 512 #controls number of iterations of the map
+    DEPTH = 25 #controls number of iterations of the map
     DEPTH_SCALE = 1
 
     #Values for the zoom functions
@@ -273,10 +273,23 @@ if __name__ == '__main__':
 
                 X = np.array(data)
 
-        export_figure_matplotlib(X, label + str(frame_current), 120, 1, False)
+        export_figure_matplotlib(X, str(frame_current), 120, 1, False)
 
-        print('frame: ' + str(frame_current + 1))
-        print(str(R_adjusted[0])+','+str(R_adjusted[1]))
-        print(str(I_adjusted[0])+','+str(I_adjusted[1]))
-        print("depth: " + str(DEPTH))
-        print()
+        if display_trace == True:
+            print('frame: ' + str(frame_current + 1))
+            print(str(R_adjusted[0])+','+str(R_adjusted[1]))
+            print(str(I_adjusted[0])+','+str(I_adjusted[1]))
+            print("depth: " + str(DEPTH))
+            print()
+
+    if make_gif == True:
+        directory = 'frames/'
+        frames = []
+
+        for filename in os.listdir(directory):
+            frames.append((int(filename[:-4]),'frames/' + filename))
+
+        frames = sorted(frames)
+        print(frames)
+
+        render([y for (x,y) in frames], "test", frame_duration = 1/24)
