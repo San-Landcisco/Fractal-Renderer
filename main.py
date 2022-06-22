@@ -1,14 +1,15 @@
 import math
 
 from frac import *
+from fastfrac import fast_fractal
 
 
 if __name__ == '__main__':
     # Domain controls for the plot
-    R_range = [-2, 1]  # Real interval
-    I_range = [-1.5, 1.5]  # Complex interval
+    R_range = [-2.5, 1.5]  # Real interval
+    I_range = [-2, 2]  # Complex interval
 
-    R_scale = 300  # Width number of pixels
+    R_scale = 10000  # Width number of pixels
     I_scale = abs(math.ceil(R_scale * (I_range[0]-I_range[1])/(R_range[1]-R_range[0])))
 
     cam = Camera(resolution=(R_scale, I_scale), frame=(R_range, I_range))
@@ -35,4 +36,6 @@ if __name__ == '__main__':
     #zoomer = Animation(cam, frame_count=1, zoom_factor=1, depth=100, depth_scale=1)
     #zoomer.animate()
 
-    cam.capture_frame(approach='baby', iterations=25, prob=True, points=10000000)
+    #cam.capture_frame(approach='baby', iterations=25, prob=True, points=10000000)
+
+    export_figure_matplotlib(fast_fractal(cam.array(), DEPTH), "test", 120, 1, False)

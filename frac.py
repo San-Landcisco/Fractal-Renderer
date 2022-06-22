@@ -92,6 +92,21 @@ class Camera:
             print("depth: " + str(self.depth))
             print()
 
+    def array(self):
+        # pixels = np.zeros((self.resolution[0],self.resolution[1]), dtype=np.complex_)
+        return np.array([[complex(((self.xlen)/self.resolution[0])*row+self.frame[0][0],
+                            ((-self.ylen)/self.resolution[1])*col+self.frame[1][1])
+                            for row in range(self.resolution[0])]
+                            for col in range(self.resolution[1])], dtype=np.complex_)
+'''        for row in range(self.resolution[0]):
+            for col in range(self.resolution[1]):
+                cx = ((self.xlen)/self.resolution[0])*row+self.frame[0][0]
+                cy = ((-self.ylen)/self.resolution[1])*col+self.frame[1][1]
+
+                pixels[col, row] = complex(cx, cy)
+
+        return pixels'''
+
 
 class Animation:  # camera path should be a path parameterized from 0 to 1 guiding the frame center
     def __init__(self, camera=Camera(), depth=25, depth_scale=1, camera_path=lambda t: (0,0), frame_count=1, frame_duration=1/24, zoom_factor=1):
@@ -214,8 +229,8 @@ def export_figure_matplotlib(arr, f_name, dpi=120, resize_fact=1, plt_show=False
     ax = plt.Axes(fig, [0., 0., 1., 1.])
     ax.set_axis_off()
     fig.add_axes(ax)
-    #ax.imshow(arr, cmap='twilight_shifted')
-    ax.imshow(arr, cmap='magma')
+    ax.imshow(arr, cmap='twilight_shifted')
+    #ax.imshow(arr, cmap='magma')
     plt.savefig("frames/" + f_name, dpi=(dpi * resize_fact))
     if plt_show:
         plt.show()
