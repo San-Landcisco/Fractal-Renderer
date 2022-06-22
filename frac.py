@@ -3,6 +3,7 @@ import numpy as np
 import math
 from multiprocessing import Process, Manager, Pool
 import os
+from random import randint
 
 from giftools import render
 
@@ -50,15 +51,15 @@ class Camera:
     def zoom(self, frame_count, frame_current, zoom_factor, depth, depth_scale=1):
         self.depth = self.depth * depth_scale
 
-        R_val = (self.xlen_init - math.exp(math.log(self.xlen_init)*(frame_count-frame_current)/frame_count+math.log(self.xlen_init*zoom_factor)*frame_current/frame_count))/2
-        I_val = (self.ylen_init - math.exp(math.log(self.ylen_init)*(frame_count-frame_current)/frame_count+math.log(self.ylen_init*zoom_factor)*frame_current/frame_count))/2
+        R_val = self.xlen_init/2*(1-zoom_factor**(frame_current/frame_count))
+        I_val = self.ylen_init/2*(1-zoom_factor**(frame_current/frame_count))
 
         R_adjusted = [self.frame_init[0][0] + R_val, self.frame_init[0][1] - R_val]
         I_adjusted = [self.frame_init[1][0] + I_val, self.frame_init[1][1] - I_val]
 
         self.update_position((R_adjusted, I_adjusted))
 
-    def capture_frame(self, approach="process", show_trace=True, iterations=25, frame_current=0):
+    def capture_frame(self, approach="process", show_trace=True, iterations=100, frame_current=0, prob=False, points=1000):
         param = 0
         if frame_current == 0:
             self.depth = iterations
@@ -67,7 +68,7 @@ class Camera:
 
                 data = manager.list(range(self.resolution[1]))
 
-                cores = 20
+                cores = 8
                 p = [
                     Process(target=renderStrips, args=(i, self, my_frac, math.ceil(self.depth), param, data, cores))
                     for i in range(cores)
@@ -80,7 +81,7 @@ class Camera:
                 X = np.array(data)
 
         if approach == 'baby':
-            X = np.array(fractal(self, my_frac, self.depth, param))
+            X = np.array(fractal(self, my_frac, self.depth, param, probabilistic=prob, samples=points))
 
         export_figure_matplotlib(X, str(frame_current), 120, 1, False)
 
@@ -122,40 +123,60 @@ class Animation:  # camera path should be a path parameterized from 0 to 1 guidi
             render([y for (x, y) in frames], "test", frame_duration=self.duration)
 
 
-def fractal(cam, iterable, iterations, time):
+def fractal(cam, iterable, iterations, time, probabilistic=False, samples=1000):
+    if probabilistic:
+        pixels = np.zeros(cam.resolution)
 
-    row, col, i = 0, 0, 0
+        r = np.random.uniform(low=0, high=2, size=samples)  # radius
+        theta = np.random.uniform(low=0, high=2*np.pi, size=samples)  # angle
 
-    pixels = [''] * cam.resolution[1]
-    for k in range(cam.resolution[1]):
-        pixels[k] = [''] * cam.resolution[0]
+        a = np.sqrt(r) * np.cos(theta)
+        b = np.sqrt(r) * np.sin(theta)
 
-    for row in range(cam.resolution[0]):
-        for col in range(cam.resolution[1]):
-
-            # if row == math.floor(w/2) and col == math.floor(h/2):
-            #    print("Halfway There ;)")
-
-            cx = ((cam.xlen)/cam.resolution[0])*row+cam.frame[0][0]
-            cy = ((-cam.ylen)/cam.resolution[1])*col+cam.frame[1][1]
-
-            # old scaling function in case something breaks
-            # cx = (row - 3*w/4)/(0.25*w)
-            # cy = (col - h/2)/(0.25*h)
-
-            c = complex(cx, cy)
+        for sample in range(samples):
+            c = complex(a[sample], b[sample])
             x = complex(0, 0)
-
+            #print(c)
             for i in range(iterations):
-                if abs(x) > 4:
+                if abs(x) > 2:
                     break
 
                 x = iterable(x, c)
 
-            color = i
-            pixels[col][row] = color
+                n = math.floor((x.real-cam.frame[0][0])/cam.xlen*cam.resolution[0])
+                m = math.floor(-(x.imag-cam.frame[1][1])/cam.ylen*cam.resolution[1])
+                #print(x)
+                #print(str(n) + "," + str(m))
+                if m in range(cam.resolution[0]) and n in range(cam.resolution[1]):
+                    pixels[n,m] += 1
+                else:
+                    break
+        return pixels
+    else:
+        row, col, i = 0, 0, 0
 
-    return pixels
+        pixels = [''] * cam.resolution[1]
+        for k in range(cam.resolution[1]):
+            pixels[k] = [''] * cam.resolution[0]
+
+        for row in range(cam.resolution[0]):
+            for col in range(cam.resolution[1]):
+                cx = ((cam.xlen)/cam.resolution[0])*row+cam.frame[0][0]
+                cy = ((-cam.ylen)/cam.resolution[1])*col+cam.frame[1][1]
+
+                c = complex(cx, cy)
+                x = complex(0, 0)
+
+                for i in range(iterations):
+                    if abs(x) > 4:
+                        break
+
+                    x = iterable(x, c)
+
+                color = i
+                pixels[col][row] = color
+
+        return pixels
 
 
 def rational_julia_set(width, height, iterations, time):  # deprecated
@@ -193,7 +214,8 @@ def export_figure_matplotlib(arr, f_name, dpi=120, resize_fact=1, plt_show=False
     ax = plt.Axes(fig, [0., 0., 1., 1.])
     ax.set_axis_off()
     fig.add_axes(ax)
-    ax.imshow(arr, cmap='twilight_shifted')
+    #ax.imshow(arr, cmap='twilight_shifted')
+    ax.imshow(arr, cmap='magma')
     plt.savefig("frames/" + f_name, dpi=(dpi * resize_fact))
     if plt_show:
         plt.show()
