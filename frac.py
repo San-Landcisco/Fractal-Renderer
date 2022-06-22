@@ -1,11 +1,12 @@
 import matplotlib.pyplot as plt
 import numpy as np
 import math
-from multiprocessing import Process, Manager, Pool
+from multiprocessing import Process, Manager, Pool, cpu_count
 import os
 from random import randint
 
 from giftools import render
+from fastfrac import fast_fractal
 
 
 class FracMap(object):
@@ -48,9 +49,7 @@ class Camera:
             self.xlen_init = self.xlen
             self.ylen_init = self.ylen
 
-    def zoom(self, frame_count, frame_current, zoom_factor, depth, depth_scale=1):
-        self.depth = self.depth * depth_scale
-
+    def zoom(self, frame_count, frame_current, zoom_factor):
         R_val = self.xlen_init/2*(1-zoom_factor**(frame_current/frame_count))
         I_val = self.ylen_init/2*(1-zoom_factor**(frame_current/frame_count))
 
@@ -68,9 +67,9 @@ class Camera:
 
                 data = manager.list(range(self.resolution[1]))
 
-                cores = 8
+                cores = cpu_count()
                 p = [
-                    Process(target=renderStrips, args=(i, self, my_frac, math.ceil(self.depth), param, data, cores))
+                    Process(target=renderStrips, args=(i, self, math.ceil(self.depth), param, data, cores))
                     for i in range(cores)
                 ]
                 for p_i in p:
@@ -81,7 +80,7 @@ class Camera:
                 X = np.array(data)
 
         if approach == 'baby':
-            X = np.array(fractal(self, my_frac, self.depth, param, probabilistic=prob, samples=points))
+            X = np.array(fast_fractal(self.array(), iterations))
 
         export_figure_matplotlib(X, str(frame_current), 120, 1, False)
 
@@ -89,27 +88,18 @@ class Camera:
             print('frame: ' + str(frame_current + 1))
             print(str(self.frame[0][0])+','+str(self.frame[0][1]))
             print(str(self.frame[1][0])+','+str(self.frame[1][1]))
-            print("depth: " + str(self.depth))
+            print("depth: " + str(iterations))
             print()
 
     def array(self):
-        # pixels = np.zeros((self.resolution[0],self.resolution[1]), dtype=np.complex_)
         return np.array([[complex(((self.xlen)/self.resolution[0])*row+self.frame[0][0],
                             ((-self.ylen)/self.resolution[1])*col+self.frame[1][1])
                             for row in range(self.resolution[0])]
                             for col in range(self.resolution[1])], dtype=np.complex_)
-'''        for row in range(self.resolution[0]):
-            for col in range(self.resolution[1]):
-                cx = ((self.xlen)/self.resolution[0])*row+self.frame[0][0]
-                cy = ((-self.ylen)/self.resolution[1])*col+self.frame[1][1]
-
-                pixels[col, row] = complex(cx, cy)
-
-        return pixels'''
 
 
 class Animation:  # camera path should be a path parameterized from 0 to 1 guiding the frame center
-    def __init__(self, camera=Camera(), depth=25, depth_scale=1, camera_path=lambda t: (0,0), frame_count=1, frame_duration=1/24, zoom_factor=1):
+    def __init__(self, camera=Camera(), depth=25, depth_scale=1, camera_path=lambda t: (0, 0), frame_count=1, frame_duration=1/24, zoom_factor=1):
         self.cam = camera
         self.path = camera_path
         self.fcount = frame_count
@@ -118,12 +108,22 @@ class Animation:  # camera path should be a path parameterized from 0 to 1 guidi
         self.depth = depth
         self.depth_scale = depth_scale
 
-    def animate(self, make_gif=True, display_trace=True):  # frame by frame moves center along the parameterized path and then applies zoom
-        for frame in range(self.fcount):
-            center = self.path(frame/(self.fcount-1))
-            self.cam.recenter(center)
-            self.cam.zoom(frame_count=self.fcount, frame_current=frame, zoom_factor=self.zoomf, depth=self.depth, depth_scale=self.depth_scale)
-            self.cam.capture_frame(iterations=self.depth, frame_current=frame, show_trace=display_trace)
+    def film(self, frame, display_trace=False):
+        #center = self.path(frame/(self.fcount-1))
+        #self.cam.recenter(center)
+        self.cam.zoom(frame_count=self.fcount, frame_current=frame, zoom_factor=self.zoomf)
+        self.cam.capture_frame(approach="baby", iterations=self.depth*(self.depth_scale**frame), frame_current=frame, show_trace=display_trace)
+
+    def animate(self, mode="strips", make_gif=True, display_trace=True):  # frame by frame moves center along the parameterized path and then applies zoom
+        if mode == "strips":
+            for frame in range(self.fcount):
+                center = self.path(frame/(self.fcount-1))
+                self.cam.recenter(center)
+                self.cam.zoom(frame_count=self.fcount, frame_current=frame, zoom_factor=self.zoomf, depth=self.depth, depth_scale=self.depth_scale)
+                self.cam.capture_frame(approach="process", iterations=self.depth, frame_current=frame, show_trace=display_trace)
+        elif mode == "frames":
+            pool = Pool(processes = cpu_count())
+            results = pool.map(self.film, range(0,self.fcount))
 
         if make_gif:
             directory = 'frames/'
@@ -136,6 +136,8 @@ class Animation:  # camera path should be a path parameterized from 0 to 1 guidi
             print(frames)
 
             render([y for (x, y) in frames], "test", frame_duration=self.duration)
+
+        print("Finished.. Yay! :)")
 
 
 def fractal(cam, iterable, iterations, time, probabilistic=False, samples=1000):
@@ -191,7 +193,7 @@ def fractal(cam, iterable, iterations, time, probabilistic=False, samples=1000):
                 color = i
                 pixels[col][row] = color
 
-        return pixels
+        return pixels # deprecated
 
 
 def rational_julia_set(width, height, iterations, time):  # deprecated
@@ -229,6 +231,7 @@ def export_figure_matplotlib(arr, f_name, dpi=120, resize_fact=1, plt_show=False
     ax = plt.Axes(fig, [0., 0., 1., 1.])
     ax.set_axis_off()
     fig.add_axes(ax)
+    ax.pcolormesh(arr, vmin=-1, vmax=1, cmap='twilight_shifted')
     ax.imshow(arr, cmap='twilight_shifted')
     #ax.imshow(arr, cmap='magma')
     plt.savefig("frames/" + f_name, dpi=(dpi * resize_fact))
@@ -238,11 +241,11 @@ def export_figure_matplotlib(arr, f_name, dpi=120, resize_fact=1, plt_show=False
         plt.close()
 
 
-def renderStrips(process, cam, iterable, iterations, time, final_render, core_count):
+def renderStrips(process, cam, iterations, time, final_render, core_count):
     for row in range(cam.resolution[1]):
         if row % core_count == process:
             I_new = (cam.frame[1][1] - (row+1)*(cam.frame[1][1]-cam.frame[1][0])/cam.resolution[1], cam.frame[1][1] - row*(cam.frame[1][1]-cam.frame[1][0])/cam.resolution[1])
 
             cam_new = Camera(resolution=(cam.resolution[0],1), frame=(cam.frame[0], I_new))
 
-            final_render[row] = fractal(cam_new, iterable, iterations, time)[0]
+            final_render[row] = fast_fractal(cam_new.array(), iterations)[0]

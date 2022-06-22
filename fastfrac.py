@@ -6,7 +6,7 @@ def fast_fractal(c, depth):
     z = 0
     for step in range(depth):
         if abs(z) >= 2:
-            return step
+            return -np.cos(step/depth*10*np.pi)
 
         z = z**2 + c
-    return depth
+    return 1
