@@ -14,6 +14,7 @@ class FracMap(object):
         f = lambda x, c: x**2 + c
         return f(x, c)
 
+
 my_frac = FracMap()
 
 
@@ -24,6 +25,7 @@ class Camera:
         self.center = ((self.frame[0][0]+self.frame[0][1])/2,(self.frame[1][0]+self.frame[1][1])/2)  # tuple storing center of the frame
         self.xlen = self.frame[0][1] - self.frame[0][0]
         self.ylen = self.frame[1][1] - self.frame[1][0]
+        self.depth = 25
 
         self.frame_init = frame  # stores original complex domain before any transformations
         self.xlen_init = self.xlen
@@ -37,7 +39,8 @@ class Camera:
 
     def recenter(self, new_center, reinit=False):  # shifts same camera frame to be centered around a new point
         self.center = new_center
-        frame = ([self.center[0]-self.xlen/2,self.center[0]+self.xlen/2],[self.center[1]-self.ylen/2,self.center[1]+self.ylen/2])
+        frame = ([self.center[0]-self.xlen/2, self.center[0]+self.xlen/2],
+                 [self.center[1]-self.ylen/2, self.center[1]+self.ylen/2])
         self.frame = frame
         if reinit:
             self.frame_init = frame  # stores original complex domain before any transformations
@@ -45,7 +48,7 @@ class Camera:
             self.ylen_init = self.ylen
 
     def zoom(self, frame_count, frame_current, zoom_factor, depth, depth_scale=1):
-        depth = math.ceil(depth * depth_scale)
+        self.depth = self.depth * depth_scale
 
         R_val = (self.xlen_init - math.exp(math.log(self.xlen_init)*(frame_count-frame_current)/frame_count+math.log(self.xlen_init*zoom_factor)*frame_current/frame_count))/2
         I_val = (self.ylen_init - math.exp(math.log(self.ylen_init)*(frame_count-frame_current)/frame_count+math.log(self.ylen_init*zoom_factor)*frame_current/frame_count))/2
@@ -53,18 +56,20 @@ class Camera:
         R_adjusted = [self.frame_init[0][0] + R_val, self.frame_init[0][1] - R_val]
         I_adjusted = [self.frame_init[1][0] + I_val, self.frame_init[1][1] - I_val]
 
-        self.update_position((R_adjusted,I_adjusted))
+        self.update_position((R_adjusted, I_adjusted))
 
     def capture_frame(self, approach="process", show_trace=True, iterations=25, frame_current=0):
         param = 0
+        if frame_current == 0:
+            self.depth = iterations
         if approach == "process":
             with Manager() as manager:
 
                 data = manager.list(range(self.resolution[1]))
 
-                cores = 8
+                cores = 20
                 p = [
-                    Process(target=renderStrips, args=(i, self, my_frac, iterations, param, data, cores))
+                    Process(target=renderStrips, args=(i, self, my_frac, math.ceil(self.depth), param, data, cores))
                     for i in range(cores)
                 ]
                 for p_i in p:
@@ -75,7 +80,7 @@ class Camera:
                 X = np.array(data)
 
         if approach == 'baby':
-            X = np.array(fractal(cam, my_frac, iterations, param))
+            X = np.array(fractal(self, my_frac, self.depth, param))
 
         export_figure_matplotlib(X, str(frame_current), 120, 1, False)
 
@@ -83,7 +88,7 @@ class Camera:
             print('frame: ' + str(frame_current + 1))
             print(str(self.frame[0][0])+','+str(self.frame[0][1]))
             print(str(self.frame[1][0])+','+str(self.frame[1][1]))
-            print("depth: " + str(iterations))
+            print("depth: " + str(self.depth))
             print()
 
 
@@ -102,7 +107,7 @@ class Animation:  # camera path should be a path parameterized from 0 to 1 guidi
             center = self.path(frame/(self.fcount-1))
             self.cam.recenter(center)
             self.cam.zoom(frame_count=self.fcount, frame_current=frame, zoom_factor=self.zoomf, depth=self.depth, depth_scale=self.depth_scale)
-            self.cam.capture_frame(frame_current=frame, show_trace=display_trace)
+            self.cam.capture_frame(iterations=self.depth, frame_current=frame, show_trace=display_trace)
 
         if make_gif:
             directory = 'frames/'
@@ -139,7 +144,7 @@ def fractal(cam, iterable, iterations, time):
             # cy = (col - h/2)/(0.25*h)
 
             c = complex(cx, cy)
-            x = complex(0,0)
+            x = complex(0, 0)
 
             for i in range(iterations):
                 if abs(x) > 4:
@@ -177,7 +182,7 @@ def rational_julia_set(width, height, iterations, time):  # deprecated
                 x = p/q + c
 
             color = i
-            pixels[col,row] = color
+            pixels[col, row] = color
 
     return pixels
 

@@ -10,11 +10,11 @@ if __name__ == '__main__':
     R_range = [-2, 2]  # Real interval
     I_range = [-2, 2]  # Complex interval
 
-    R_scale = 1000  # Width number of pixels
+    R_scale = 512  # Width number of pixels
     I_scale = abs(math.ceil(R_scale * (I_range[0]-I_range[1])/(R_range[1]-R_range[0])))
 
-    cam = Camera(resolution=(R_scale,I_scale),frame=(R_range,I_range))
-    cam.recenter((-.866,.09), reinit=True)
+    cam = Camera(resolution=(R_scale, I_scale), frame=(R_range, I_range))
+    cam.recenter((-.10109636384562, .95628651080914), reinit=True)
     print(cam.frame)
 
     show_trace = True
@@ -34,7 +34,7 @@ if __name__ == '__main__':
     DEPTH = 100  # controls number of iterations of the map
     DEPTH_SCALE = 1
 
-    zoomer = Animation(cam, frame_count=5, zoom_factor=0.1)
+    zoomer = Animation(cam, frame_count=480, zoom_factor=0.001, depth=128, depth_scale=1.001)
     zoomer.animate()
 
     #cam.capture_frame()
