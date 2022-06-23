@@ -21,17 +21,17 @@ if __name__ == '__main__':
     approach = "process"
 
     frame_count = 24*20
-    frame_duration = 1/24
+    fps = 24
     zoom_factor = 0.1**20
 
     camera_path = 0
 
     param = 0  # time parameter for animation
 
-    depth = 512  # controls number of iterations of the map
+    depth = 1024  # controls number of iterations of the map
     depth_scale = 1
 
-    zoomer = Animation(cam, depth, depth_scale, camera_path, frame_count, frame_duration, zoom_factor)
+    zoomer = Animation(cam, depth, depth_scale, camera_path, frame_count, fps, zoom_factor)
     zoomer.animate("frames", make_gif, show_trace)
 
     #cam.capture_frame(approach='process', iterations=25)

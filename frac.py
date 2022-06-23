@@ -99,11 +99,11 @@ class Camera:
 
 
 class Animation:  # camera path should be a path parameterized from 0 to 1 guiding the frame center
-    def __init__(self, camera=Camera(), depth=25, depth_scale=1, camera_path=lambda t: (0, 0), frame_count=1, frame_duration=1/24, zoom_factor=1):
+    def __init__(self, camera=Camera(), depth=25, depth_scale=1, camera_path=lambda t: (0, 0), frame_count=1, fps=24, zoom_factor=1):
         self.cam = camera
         self.path = camera_path
         self.fcount = frame_count
-        self.duration = frame_duration
+        self.fps = fps
         self.zoomf = zoom_factor
         self.depth = depth
         self.depth_scale = depth_scale
@@ -122,9 +122,16 @@ class Animation:  # camera path should be a path parameterized from 0 to 1 guidi
                 self.cam.zoom(frame_count=self.fcount, frame_current=frame, zoom_factor=self.zoomf, depth=self.depth, depth_scale=self.depth_scale)
                 self.cam.capture_frame(approach="process", iterations=self.depth, frame_current=frame, show_trace=display_trace)
         elif mode == "frames":
+            loop = math.floor(self.fcount / self.fps)
+            for round in range(loop):
+                pool = Pool(processes = cpu_count())
+                results = pool.map(self.film, range(round*self.fps, (round+1)*self.fps))
+                pool.close()
+                pool.join()
             pool = Pool(processes = cpu_count())
-            results = pool.map(self.film, range(0,self.fcount))
-
+            results = pool.map(self.film, range(loop*self.fps+1, self.fcount))
+            pool.close()
+            pool.join()
         if make_gif:
             directory = 'frames/'
             frames = []
@@ -135,7 +142,7 @@ class Animation:  # camera path should be a path parameterized from 0 to 1 guidi
             frames = sorted(frames)
             print(frames)
 
-            render([y for (x, y) in frames], "test", frame_duration=self.duration)
+            render([y for (x, y) in frames], "test", frame_duration=1/self.fps)
 
         print("Finished.. Yay! :)")
 
