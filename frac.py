@@ -5,13 +5,14 @@ from multiprocessing import Process, Manager, Pool, cpu_count
 import os
 from random import randint
 
-from giftools import render
+from giftools import render, render_mp4
 from fastfrac import fast_fractal
 
 
 class FracMap(object):
     def __init__(self):
         pass
+
     def __call__(self, x, c):
         f = lambda x, c: x**2 + c
         return f(x, c)
@@ -21,10 +22,10 @@ my_frac = FracMap()
 
 
 class Camera:
-    def __init__(self, resolution=(250,250), frame=([-2,2],[-2,2]), center=(0,0)):
+    def __init__(self, resolution=(250, 250), frame=([-2, 2], [-2, 2]), center=(0,0)):
         self.resolution = resolution  # dimensions in pixels
         self.frame = frame  # tuple storing complex domain
-        self.center = ((self.frame[0][0]+self.frame[0][1])/2,(self.frame[1][0]+self.frame[1][1])/2)  # tuple storing center of the frame
+        self.center = ((self.frame[0][0]+self.frame[0][1])/2, (self.frame[1][0]+self.frame[1][1])/2)  # tuple storing center of the frame
         self.xlen = self.frame[0][1] - self.frame[0][0]
         self.ylen = self.frame[1][1] - self.frame[1][0]
         self.depth = 25
@@ -99,7 +100,8 @@ class Camera:
 
 
 class Animation:  # camera path should be a path parameterized from 0 to 1 guiding the frame center
-    def __init__(self, camera=Camera(), depth=25, depth_scale=1, camera_path=lambda t: (0, 0), frame_count=1, fps=24, zoom_factor=1):
+    def __init__(self, camera=Camera(), depth=25, depth_scale=1, camera_path=lambda t: (0, 0),
+                 frame_count=1, fps=24, zoom_factor=1):
         self.cam = camera
         self.path = camera_path
         self.fcount = frame_count
@@ -109,12 +111,13 @@ class Animation:  # camera path should be a path parameterized from 0 to 1 guidi
         self.depth_scale = depth_scale
 
     def film(self, frame, display_trace=False):
-        #center = self.path(frame/(self.fcount-1))
-        #self.cam.recenter(center)
+        # center = self.path(frame/(self.fcount-1))
+        # self.cam.recenter(center)
         self.cam.zoom(frame_count=self.fcount, frame_current=frame, zoom_factor=self.zoomf)
         self.cam.capture_frame(approach="baby", iterations=self.depth*(self.depth_scale**frame), frame_current=frame, show_trace=display_trace)
 
-    def animate(self, mode="strips", make_gif=True, display_trace=True):  # frame by frame moves center along the parameterized path and then applies zoom
+    def animate(self, mode="strips", make_gif=True, make_mp4=True, display_trace=True):
+        # frame by frame moves center along the parameterized path and then applies zoom
         if mode == "strips":
             for frame in range(self.fcount):
                 center = self.path(frame/(self.fcount-1))
@@ -124,11 +127,11 @@ class Animation:  # camera path should be a path parameterized from 0 to 1 guidi
         elif mode == "frames":
             loop = math.floor(self.fcount / self.fps)
             for round in range(loop):
-                pool = Pool(processes = cpu_count())
+                pool = Pool(processes=cpu_count())
                 results = pool.map(self.film, range(round*self.fps, (round+1)*self.fps))
                 pool.close()
                 pool.join()
-            pool = Pool(processes = cpu_count())
+            pool = Pool(processes=cpu_count())
             results = pool.map(self.film, range(loop*self.fps+1, self.fcount))
             pool.close()
             pool.join()
@@ -143,6 +146,11 @@ class Animation:  # camera path should be a path parameterized from 0 to 1 guidi
             print(frames)
 
             render([y for (x, y) in frames], "test", frame_duration=1/self.fps)
+        elif make_mp4:
+            directory = 'frames/'
+            frames = sorted([(int(filename[:-4]), 'frames/' + filename) for filename in os.listdir(directory)])
+            print(frames)
+            render_mp4([y for (x, y) in frames], "test", frame_duration=self.duration)
 
         print("Finished.. Yay! :)")
 
@@ -160,7 +168,7 @@ def fractal(cam, iterable, iterations, time, probabilistic=False, samples=1000):
         for sample in range(samples):
             c = complex(a[sample], b[sample])
             x = complex(0, 0)
-            #print(c)
+            # print(c)
             for i in range(iterations):
                 if abs(x) > 2:
                     break
@@ -169,10 +177,10 @@ def fractal(cam, iterable, iterations, time, probabilistic=False, samples=1000):
 
                 n = math.floor((x.real-cam.frame[0][0])/cam.xlen*cam.resolution[0])
                 m = math.floor(-(x.imag-cam.frame[1][1])/cam.ylen*cam.resolution[1])
-                #print(x)
-                #print(str(n) + "," + str(m))
+                # print(x)
+                # print(str(n) + "," + str(m))
                 if m in range(cam.resolution[0]) and n in range(cam.resolution[1]):
-                    pixels[n,m] += 1
+                    pixels[n, m] += 1
                 else:
                     break
         return pixels
@@ -200,7 +208,7 @@ def fractal(cam, iterable, iterations, time, probabilistic=False, samples=1000):
                 color = i
                 pixels[col][row] = color
 
-        return pixels # deprecated
+        return pixels  # deprecated
 
 
 def rational_julia_set(width, height, iterations, time):  # deprecated
@@ -223,7 +231,8 @@ def rational_julia_set(width, height, iterations, time):  # deprecated
                 p = x**2+2*x+1
                 q = x+6
 
-                if (abs(x) > 10) or q == 0: break
+                if (abs(x) > 10) or q == 0:
+                    break
                 x = p/q + c
 
             color = i
@@ -240,7 +249,7 @@ def export_figure_matplotlib(arr, f_name, dpi=120, resize_fact=1, plt_show=False
     fig.add_axes(ax)
     ax.pcolormesh(arr, vmin=-1, vmax=1, cmap='twilight_shifted')
     ax.imshow(arr, cmap='twilight_shifted')
-    #ax.imshow(arr, cmap='magma')
+    # ax.imshow(arr, cmap='magma')
     plt.savefig("frames/" + f_name, dpi=(dpi * resize_fact))
     if plt_show:
         plt.show()
@@ -253,6 +262,6 @@ def renderStrips(process, cam, iterations, time, final_render, core_count):
         if row % core_count == process:
             I_new = (cam.frame[1][1] - (row+1)*(cam.frame[1][1]-cam.frame[1][0])/cam.resolution[1], cam.frame[1][1] - row*(cam.frame[1][1]-cam.frame[1][0])/cam.resolution[1])
 
-            cam_new = Camera(resolution=(cam.resolution[0],1), frame=(cam.frame[0], I_new))
+            cam_new = Camera(resolution=(cam.resolution[0], 1), frame=(cam.frame[0], I_new))
 
             final_render[row] = fast_fractal(cam_new.array(), iterations)[0]

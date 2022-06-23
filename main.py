@@ -9,7 +9,7 @@ if __name__ == '__main__':
     R_range = [-2.5, 1.5]  # Real interval
     I_range = [-2, 2]  # Complex interval
 
-    R_scale = 1000  # Width number of pixels
+    R_scale = 1024  # Width number of pixels
     I_scale = abs(math.ceil(R_scale * (I_range[0]-I_range[1])/(R_range[1]-R_range[0])))
 
     cam = Camera(resolution=(R_scale, I_scale), frame=(R_range, I_range))
@@ -17,12 +17,13 @@ if __name__ == '__main__':
     print(cam.frame)
 
     show_trace = False
-    make_gif = True
+    make_gif = False
+    make_mp4 = True
     approach = "process"
 
-    frame_count = 24*20
+    frame_count = 24*10
     fps = 24
-    zoom_factor = 0.1**20
+    zoom_factor = 0.1**10
 
     camera_path = 0
 
@@ -32,8 +33,8 @@ if __name__ == '__main__':
     depth_scale = 1
 
     zoomer = Animation(cam, depth, depth_scale, camera_path, frame_count, fps, zoom_factor)
-    zoomer.animate("frames", make_gif, show_trace)
+    zoomer.animate("frames", make_gif, make_mp4, show_trace)
 
-    #cam.capture_frame(approach='process', iterations=25)
+    # cam.capture_frame(approach='process', iterations=25)
 
-    #export_figure_matplotlib(fast_fractal(cam.array(), depth=1), "test", 120, 1, False)
+    # export_figure_matplotlib(fast_fractal(cam.array(), depth=1), "test", 120, 1, False)
